@@ -211,6 +211,9 @@ void Command::clear()
         free(_simpleCommands[i]->_arguments);
         free(_simpleCommands[i]);
     }
+    // free(_simpleCommands);
+    // _simpleCommands = NULL;
+    // _numberOfAvailableSimpleCommands = 1;
 
     if (_outFile)
     {
@@ -264,10 +267,98 @@ void Command::print()
 
 void Command::execute()
 {
-    print();
+    // No execution if there are no commands
+    if (_numberOfSimpleCommands == 0) {
+        clear();
+        prompt();
+        return;
+    }
+
     /*
-        Write your code here
+        Notes:
+        - To use dup2, reference: https://www.geeksforgeeks.org/c/dup-dup2-linux-system-call/
+            int fd = open(file, flags);
+            dup2(fd, STDIN_FILENO | STDOUT_FILENO | STDERR_FILENO);
+            close(fd);
+
+          Open the original file, duplicate its descriptor, then close the original descriptor
+          Then any print statements after the dup2 will output to the file descriptor, or take input from file descriptor
     */
+
+    // Indicates if there was any pipe feeding into current one
+    int prev = -1;
+
+    // Reserve space to store all PIDs of children processes
+    std::vector<pid_t> pids;
+    pids.reserve(_numberOfSimpleCommands);
+
+    for (int i = 0; i < _numberOfSimpleCommands; i++) {
+        // Determines if this process is the last one in the pipeline
+        bool last = (i == _numberOfSimpleCommands - 1);
+    
+        // Create a pipe HERE
+    
+        // Creating child process
+        pid_t pid = fork();
+        
+        if (pid < 0) {
+            // ERROR
+            
+        }
+
+        if (pid == 0) {
+            // CHILD
+
+            // If there was a pipe before this one, redirect its output as input to this one
+            if (prev != -1) {
+                // Close child process if any error occurs
+                if (dup2(prev, STDIN_FILENO) < 0) {
+                    perror("dup2 stdin");
+                    _exit(1);
+                }
+                // Close previous pipe
+                close(prev);
+            }
+
+            if (_inputFile) {
+
+            }
+
+            if (_outFile) {
+                
+            }
+
+            if (_errFile) {
+
+            }
+
+            if (_out_error) {
+
+            }
+
+            // Execute command
+            execvp(_simpleCommands[i]->_arguments[0], _simpleCommands[i]->_arguments);
+
+            // Only output error if execute fails, then exit
+            perror(_simpleCommands[i]->_arguments[0]);
+            _exit(1);
+        }
+
+        if (pid > 0) {
+            // PARENT
+            pids.push_back(pid);
+            if (prev != -1) close(prev);
+        }
+    }
+
+    // Wait for child processes to finish first
+    // if TOKEN_BACKGROUND used, it will not wait
+    if (!_background) {
+        for (pid_t p : pids) {
+            int status;
+            waitpid(p, &status, 0);
+        }
+    }
 
     clear();
     prompt();
@@ -278,7 +369,7 @@ void Command::prompt()
     printf("myshell>");
     fflush(stdout);
     std::string input;
-    while (true)
+    while (true) 
     {
         std::getline(std::cin, input); 
         std::vector<Token> tokens = tokenize(input);

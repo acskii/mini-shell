@@ -321,19 +321,58 @@ void Command::execute()
             }
 
             if (_inputFile) {
-
+                // O_RDONLY => Flag to open file in read-only mode
+                int fd = open(_inputFile, O_RDONLY);
+                if (fd < 0) {
+                    perror(_inputFile);
+                    _exit(1);
+                }
+                if (dup2(fd, STDIN_FILENO) < 0) {
+                    perror("dup2 stdin");
+                    _exit(1);
+                }
+                close(fd);
             }
 
             if (_outFile) {
-                
+                // File needs to be created if it doesn't exist
+                // File should be written to only, appended if TOKEN_APPEND otherwise overwritten
+                // Edit: added 0666 as permissions to avoid Permission denied error
+                int fd = open(_outFile, O_WRONLY | O_CREAT | (_append ? O_APPEND : O_TRUNC), 0666);
+                if (fd < 0) {
+                    perror(_outFile);
+                    _exit(1);
+                }
+                if (dup2(fd, STDOUT_FILENO) < 0) {
+                    perror("dup2 stdout");
+                    _exit(1);
+                }
+                close(fd);
             }
 
             if (_errFile) {
-
+                // File needs to be created if it doesn't exist
+                // File should be written to only, appended if TOKEN_APPEND otherwise overwritten
+                // Edit: added 0666 as permissions to avoid Permission denied error as done in _outFile
+                int fd = open(_errFile, O_WRONLY | O_CREAT | (_append ? O_APPEND : O_TRUNC), 0666);
+                if (fd < 0) {
+                    perror(_errFile);
+                    _exit(1);
+                }
+                if (dup2(fd, STDERR_FILENO) < 0) {
+                    perror("dup2 stderr");
+                    _exit(1);
+                }
+                close(fd);
             }
 
             if (_out_error) {
-
+                // Once the STDOUT_FILENO is set => output file is set
+                // We also set the STDERR_FILENO with the same file to fulfill TOKEN_REDIRECT_AND_ERROR
+                if (dup2(STDOUT_FILENO, STDERR_FILENO) < 0) { 
+                    perror("dup2 out_error"); 
+                    _exit(1); 
+                }
             }
 
             // Execute command

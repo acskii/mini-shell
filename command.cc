@@ -31,16 +31,122 @@
 
 void parse(std::vector<Token> &tokens)
 {
-    Command currentCommand;
+    Command currentCommand = Command::_currentCommand;
     SimpleCommand *currentSimpleCommand = new SimpleCommand();
 
-    currentCommand.execute();
-    /*
-      Implement this function 
-      you must parse for all possible tokens scenario
-      right now command.execute only print the format , you will inject it in your logic.
+    // If the previous token is expecting a file in the next token
+    TokenType expecting = TOKEN_EOF;
 
-    */
+    for (int i = 0; i < tokens.size(); i++) {
+        // create new simple command whenever a pipe is encountered
+        // append arguments to current simple command
+        if (expecting != TOKEN_EOF) {
+            // If the token after is not as expected, then an error is output
+            if (tokens[i].type != TOKEN_COMMAND && tokens[i].type != TOKEN_ARGUMENT) {
+                fprintf(stderr, "myshell: syntax error: expected filename after redirect\n");
+                delete currentSimpleCommand;
+                currentCommand.clear();
+                return;
+            }
+
+            // command parameters are adjusted based on previous token
+
+            // std::string.data() is used to set attribute for command object as a mutable char*
+            char* file = strdup(tokens[i].value.c_str());
+
+            switch (expecting) {
+                case TOKEN_REDIRECT:
+                    currentCommand._outFile = file;
+                    break;
+                case TOKEN_APPEND:
+                    currentCommand._outFile = file;
+                    currentCommand._append = 1;
+                    break;
+                case TOKEN_INPUT:
+                    currentCommand._inputFile = file;
+                    break;
+                case TOKEN_ERROR:
+                    currentCommand._errFile = file;
+                    break;
+                case TOKEN_REDIRECT_AND_ERROR:
+                    currentCommand._outFile = file;
+                    currentCommand._out_error = 1;
+                    currentCommand._append = 1;
+                    break;              
+                default:
+                    break;
+            }
+
+            expecting = TOKEN_EOF;
+            continue;
+        }
+
+        // Any other token found
+        switch (tokens[i].type) {
+            case TOKEN_COMMAND:
+            case TOKEN_ARGUMENT:
+                currentSimpleCommand->insertArgument(strdup(tokens[i].value.c_str()));
+                break;
+            case TOKEN_BACKGROUND:
+                // If there are no commands before the &
+                if (currentSimpleCommand->_numberOfArguments == 0) {
+                    fprintf(stderr, "myshell: syntax error: empty command before '&'\n");
+                    delete currentSimpleCommand;
+                    currentCommand.clear();
+                    return;
+                }
+                currentCommand.insertSimpleCommand(currentSimpleCommand);
+                currentSimpleCommand = new SimpleCommand();
+                currentCommand._background = 1;     // set background in command attribute
+                break;
+            case TOKEN_PIPE:
+                // If there are no commands before the |
+                if (currentSimpleCommand->_numberOfArguments == 0) {
+                    fprintf(stderr, "myshell: syntax error: empty command before '|'\n");
+                    delete currentSimpleCommand;
+                    currentCommand.clear();
+                    return;
+                }
+                currentCommand.insertSimpleCommand(currentSimpleCommand);
+                currentSimpleCommand = new SimpleCommand();
+                break;
+
+            // Send to expecting switch for command attribute setting
+            case TOKEN_REDIRECT:
+            case TOKEN_APPEND:
+            case TOKEN_INPUT:
+            case TOKEN_ERROR:
+            case TOKEN_REDIRECT_AND_ERROR:
+                expecting = tokens[i].type;
+                break;
+
+            case TOKEN_EOF:
+                // Add any remaining arguments in the current simple command into the current command
+                if (currentSimpleCommand->_numberOfArguments > 0) {
+                    currentCommand.insertSimpleCommand(currentSimpleCommand);
+                    // clear pointer
+                    currentSimpleCommand = nullptr;
+                } else {
+                    // If it is empty, free any memory
+                    delete currentSimpleCommand;
+                    currentSimpleCommand = nullptr;
+                }
+
+                // If no simple commands were parsed at all, clear and exit
+                if (currentCommand._numberOfSimpleCommands == 0) {
+                    currentCommand.clear();
+                    return;
+                }
+
+                // Run command after all tokens have been parsed
+                currentCommand.execute();
+                return;
+
+            default:
+                fprintf(stderr, "myshell: unknown token type %d at token \"%s\"\n", (int) tokens[i].type, tokens[i].value.c_str());
+                break;
+        }
+    }
 }
 
 SimpleCommand::SimpleCommand()
@@ -76,6 +182,8 @@ Command::Command()
     _inputFile = 0;
     _errFile = 0;
     _background = 0;
+    _out_error = 0;
+    _append = 0;
 }
 
 void Command::insertSimpleCommand(SimpleCommand *simpleCommand)
@@ -124,6 +232,8 @@ void Command::clear()
     _inputFile = 0;
     _errFile = 0;
     _background = 0;
+    _out_error = 0;
+    _append = 0;
 }
 
 void Command::print()

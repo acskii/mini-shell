@@ -427,6 +427,11 @@ SimpleCommand *Command::_currentSimpleCommand;
 
 int main()
 {
+    // From: https://stackoverflow.com/questions/7624200/preventing-ctrl-c-from-closing-program
+    // Ignore CTRL + C
+    signal(SIGINT, SIG_IGN);
+
+
     Command::_currentCommand.prompt();
     return 0;
 }

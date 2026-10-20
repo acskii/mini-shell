@@ -274,6 +274,12 @@ void Command::execute()
         return;
     }
 
+    // If exit command is used, exit the program
+    if (strcmp(_simpleCommands[0]->_arguments[0], "exit") == 0) {
+        printf("Good bye!!\n");
+        exit(1);
+    }
+
     /*
         Notes:
         - To use dup2, reference: https://www.geeksforgeeks.org/c/dup-dup2-linux-system-call/

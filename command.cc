@@ -280,6 +280,24 @@ void Command::execute()
         exit(1);
     }
 
+    // If cd command is used, change the current directory
+    if (strcmp(_simpleCommands[0]->_arguments[0], "cd") == 0)  {
+        int err;
+        if (_simpleCommands[0]->_numberOfArguments > 1)
+        	// change to PATH given
+            err = chdir(_simpleCommands[0]->_arguments[1]);
+        else // change to home directory
+            err = chdir(getenv("HOME"));
+
+        if (err != 0)
+            perror("chdir");
+
+        clear();
+        prompt();
+        return;
+    }
+
+
     /*
         Notes:
         - To use dup2, reference: https://www.geeksforgeeks.org/c/dup-dup2-linux-system-call/

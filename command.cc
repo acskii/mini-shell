@@ -294,6 +294,9 @@ void Command::execute()
     // Indicates if there was any pipe feeding into current one
     int prev = -1;
 
+    // Contains the 
+    int pipefd[2] = { -1, -1 };
+
     // Reserve space to store all PIDs of children processes
     std::vector<pid_t> pids;
     pids.reserve(_numberOfSimpleCommands);
@@ -302,7 +305,19 @@ void Command::execute()
         // Determines if this process is the last one in the pipeline
         bool last = (i == _numberOfSimpleCommands - 1);
     
-        // Create a pipe HERE
+        // Create a pipe for every simple command except the last
+        if (!last) {
+            if (pipe(pipefd) < 0) {
+                perror("pipe");
+                // Close any pipe before this one
+                // close(prev);
+                // Wait for all current processes to end
+                for (pid_t p : pids) { waitpid(p, NULL, 0); }
+                // Clear 
+                clear();
+                return;
+            }
+        }
     
         // Creating child process
         pid_t pid = fork();
@@ -340,47 +355,56 @@ void Command::execute()
                 close(fd);
             }
 
-            if (_outFile) {
-                // File needs to be created if it doesn't exist
-                // File should be written to only, appended if TOKEN_APPEND otherwise overwritten
-                // Edit: added 0666 as permissions to avoid Permission denied error
-                int fd = open(_outFile, O_WRONLY | O_CREAT | (_append ? O_APPEND : O_TRUNC), 0666);
-                if (fd < 0) {
-                    perror(_outFile);
-                    _exit(1);
+            if (last) {
+                if (_outFile) {
+                    // File needs to be created if it doesn't exist
+                    // File should be written to only, appended if TOKEN_APPEND otherwise overwritten
+                    // Edit: added 0666 as permissions to avoid Permission denied error
+                    int fd = open(_outFile, O_WRONLY | O_CREAT | (_append ? O_APPEND : O_TRUNC), 0666);
+                    if (fd < 0) {
+                        perror(_outFile);
+                        _exit(1);
+                    }
+                    if (dup2(fd, STDOUT_FILENO) < 0) {
+                        perror("dup2 stdout");
+                        _exit(1);
+                    }
+                    close(fd);
                 }
-                if (dup2(fd, STDOUT_FILENO) < 0) {
-                    perror("dup2 stdout");
-                    _exit(1);
-                }
-                close(fd);
-            }
 
-            if (_errFile) {
-                // File needs to be created if it doesn't exist
-                // File should be written to only, appended if TOKEN_APPEND otherwise overwritten
-                // Edit: added 0666 as permissions to avoid Permission denied error as done in _outFile
-                int fd = open(_errFile, O_WRONLY | O_CREAT | (_append ? O_APPEND : O_TRUNC), 0666);
-                if (fd < 0) {
-                    perror(_errFile);
+                if (_errFile) {
+                    // File needs to be created if it doesn't exist
+                    // File should be written to only, appended if TOKEN_APPEND otherwise overwritten
+                    // Edit: added 0666 as permissions to avoid Permission denied error as done in _outFile
+                    int fd = open(_errFile, O_WRONLY | O_CREAT | (_append ? O_APPEND : O_TRUNC), 0666);
+                    if (fd < 0) {
+                        perror(_errFile);
+                        _exit(1);
+                    }
+                    if (dup2(fd, STDERR_FILENO) < 0) {
+                        perror("dup2 stderr");
+                        _exit(1);
+                    }
+                    close(fd);
+                }
+
+                if (_out_error) {
+                    // Once the STDOUT_FILENO is set => output file is set
+                    // We also set the STDERR_FILENO with the same file to fulfill TOKEN_REDIRECT_AND_ERROR
+                    if (dup2(STDOUT_FILENO, STDERR_FILENO) < 0) { 
+                        perror("dup2 out_error"); 
+                        _exit(1); 
+                    }
+                }
+            } else {
+                close(pipefd[0]);
+                if (dup2(pipefd[1], STDOUT_FILENO) < 0) {
+                    perror("dup2 pipe stdout");
                     _exit(1);
                 }
-                if (dup2(fd, STDERR_FILENO) < 0) {
-                    perror("dup2 stderr");
-                    _exit(1);
-                }
-                close(fd);
+                close(pipefd[1]);
             }
-
-            if (_out_error) {
-                // Once the STDOUT_FILENO is set => output file is set
-                // We also set the STDERR_FILENO with the same file to fulfill TOKEN_REDIRECT_AND_ERROR
-                if (dup2(STDOUT_FILENO, STDERR_FILENO) < 0) { 
-                    perror("dup2 out_error"); 
-                    _exit(1); 
-                }
-            }
-
+            
             // Execute command
             execvp(_simpleCommands[i]->_arguments[0], _simpleCommands[i]->_arguments);
 
@@ -393,6 +417,8 @@ void Command::execute()
             // PARENT
             pids.push_back(pid);
             if (prev != -1) close(prev);
+            if (!last) close(pipefd[1]);
+            prev = last ? -1 : pipefd[0];
         }
     }
 

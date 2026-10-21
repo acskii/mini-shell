@@ -28,6 +28,8 @@
 #include "command.h"
 #include "tokenizer.h"
 
+// Global variable for log file descriptor
+int logfd;
 
 void parse(std::vector<Token> &tokens)
 {
@@ -469,8 +471,48 @@ void Command::prompt()
 Command Command::_currentCommand;
 SimpleCommand *Command::_currentSimpleCommand;
 
+void handle_sigchld(int sig) {
+    // save and restore errno to prevent race conditions if the handler interrupts a system call in the main thread.
+    int saved_errno = errno; 
+
+    int status;
+    pid_t pid;
+
+    // Loop with waitpid and WNOHANG to reap ALL currently dead children.
+    // Use dprintf to write to file descriptor
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        if (logfd != -1) {
+            if (WIFEXITED(status)) {
+                dprintf(logfd, "Handler: Child %d exited with status %d\n", pid, WEXITSTATUS(status));
+            } else if (WIFSIGNALED(status)) {
+                dprintf(logfd, "Handler: Child %d killed by signal %d\n", pid, WTERMSIG(status));
+            }
+        }
+    }
+
+    errno = saved_errno; 
+}
+
 int main()
-{
+{   
+    logfd = open("childs.txt", O_WRONLY | O_CREAT | O_APPEND, 0666);
+    if (logfd < 0) {
+        perror("log file");
+        exit(1);
+    }
+
+    // https://stackoverflow.com/questions/46899512/catching-sigchld-with-sigaction
+    struct sigaction sigact;
+
+    sigact.sa_handler = handle_sigchld;
+    sigemptyset(&sigact.sa_mask);
+
+    if (sigaction(SIGCHLD, &sigact, NULL) == -1) {
+        perror("sigaction failed");
+        close(logfd);
+        exit(1);
+    }
+
     // From: https://stackoverflow.com/questions/7624200/preventing-ctrl-c-from-closing-program
     // Ignore CTRL + C
     signal(SIGINT, SIG_IGN);

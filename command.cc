@@ -316,7 +316,8 @@ void Command::execute()
     // Indicates if there was any pipe feeding into current one
     int prev = -1;
 
-    // Contains the 
+    // Contains the output and input of the previous child process in the pipeline
+    // Must be handled by the parent
     int pipefd[2] = { -1, -1 };
 
     // Reserve space to store all PIDs of children processes
@@ -332,10 +333,9 @@ void Command::execute()
             if (pipe(pipefd) < 0) {
                 perror("pipe");
                 // Close any pipe before this one
-                // close(prev);
+                close(prev);
                 // Wait for all current processes to end
                 for (pid_t p : pids) { waitpid(p, NULL, 0); }
-                // Clear 
                 clear();
                 return;
             }
@@ -346,7 +346,14 @@ void Command::execute()
         
         if (pid < 0) {
             // ERROR
-            
+            perror("fork");
+            close(prev);
+            close(pipefd[0]);
+            close(pipefd[1]);
+            // Wait for all current processes to end
+            for (pid_t p : pids) { waitpid(p, NULL, 0); }
+            clear();
+            exit(1);
         }
 
         if (pid == 0) {
@@ -357,7 +364,7 @@ void Command::execute()
                 // Close child process if any error occurs
                 if (dup2(prev, STDIN_FILENO) < 0) {
                     perror("dup2 stdin");
-                    _exit(1);
+                    exit(1);
                 }
                 // Close previous pipe
                 close(prev);
@@ -368,11 +375,11 @@ void Command::execute()
                 int fd = open(_inputFile, O_RDONLY);
                 if (fd < 0) {
                     perror(_inputFile);
-                    _exit(1);
+                    exit(1);
                 }
                 if (dup2(fd, STDIN_FILENO) < 0) {
                     perror("dup2 stdin");
-                    _exit(1);
+                    exit(1);
                 }
                 close(fd);
             }
@@ -385,11 +392,11 @@ void Command::execute()
                     int fd = open(_outFile, O_WRONLY | O_CREAT | (_append ? O_APPEND : O_TRUNC), 0666);
                     if (fd < 0) {
                         perror(_outFile);
-                        _exit(1);
+                        exit(1);
                     }
                     if (dup2(fd, STDOUT_FILENO) < 0) {
                         perror("dup2 stdout");
-                        _exit(1);
+                        exit(1);
                     }
                     close(fd);
                 }
@@ -401,11 +408,11 @@ void Command::execute()
                     int fd = open(_errFile, O_WRONLY | O_CREAT | (_append ? O_APPEND : O_TRUNC), 0666);
                     if (fd < 0) {
                         perror(_errFile);
-                        _exit(1);
+                        exit(1);
                     }
                     if (dup2(fd, STDERR_FILENO) < 0) {
                         perror("dup2 stderr");
-                        _exit(1);
+                        exit(1);
                     }
                     close(fd);
                 }
@@ -415,14 +422,14 @@ void Command::execute()
                     // We also set the STDERR_FILENO with the same file to fulfill TOKEN_REDIRECT_AND_ERROR
                     if (dup2(STDOUT_FILENO, STDERR_FILENO) < 0) { 
                         perror("dup2 out_error"); 
-                        _exit(1); 
+                        exit(1); 
                     }
                 }
             } else {
                 close(pipefd[0]);
                 if (dup2(pipefd[1], STDOUT_FILENO) < 0) {
                     perror("dup2 pipe stdout");
-                    _exit(1);
+                    exit(1);
                 }
                 close(pipefd[1]);
             }
@@ -432,7 +439,7 @@ void Command::execute()
 
             // Only output error if execute fails, then exit
             perror(_simpleCommands[i]->_arguments[0]);
-            _exit(1);
+            exit(1);
         }
 
         if (pid > 0) {
@@ -448,8 +455,7 @@ void Command::execute()
     // if TOKEN_BACKGROUND used, it will not wait
     if (!_background) {
         for (pid_t p : pids) {
-            int status;
-            waitpid(p, &status, 0);
+            waitpid(p, NULL, 0);
         }
     }
 
@@ -503,11 +509,14 @@ int main()
         exit(1);
     }
 
-    // https://stackoverflow.com/questions/46899512/catching-sigchld-with-sigaction
+    // Referenced from: https://stackoverflow.com/questions/46899512/catching-sigchld-with-sigaction
     struct sigaction sigact;
 
     sigact.sa_handler = handle_sigchld;
     sigemptyset(&sigact.sa_mask);
+
+    // Note: Added after background processes hanged the next command
+    sigact.sa_flags = SA_RESTART;
 
     if (sigaction(SIGCHLD, &sigact, NULL) == -1) {
         perror("sigaction failed");

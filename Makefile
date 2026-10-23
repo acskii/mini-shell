@@ -6,13 +6,17 @@
 CXX := g++
 
 # Set C++ version and warning outputs
+# Flags:
+#	-Wall > enables all warnings flags
+#   -Wextra > prints additional warnings not covered by -Wall
+# 	-g > debugging information
 CXXFLAGS := -std=c++17 -Wall -Wextra -g
 
 # List of source files
 SRCS := command.cc tokenizer.cc
 
-# Replace every .cc extension with .o to differentiate objects from source
-OBJS := $(SRCS:.cc=.o)
+# List of object files
+OBJS := command.o tokenizer.o
 
 # Executable
 TARGET := myshell
@@ -21,17 +25,20 @@ TARGET := myshell
 
 all: $(TARGET) 
 
+# Header dependencies
+command.o:   command.h tokenizer.h
+tokenizer.o: tokenizer.h
+
+# Referenced from: https://www.geeksforgeeks.org/cpp/makefile-in-c-and-its-applications/
 # $^ ensures all pre-requisites are met
+# Creates command like: g++ CXXFLAGS -o myshell command.o tokenizer.o
+# To link object files with executable
 $(TARGET) : $(OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
 # Compile each .cc into a .o
 %.o: %.cc
 	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-# Header dependencies
-command.o:   command.h tokenizer.h
-tokenizer.o: tokenizer.h
 
 .PHONY: clean
 clean: ## Clean up compiled files

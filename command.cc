@@ -276,6 +276,7 @@ void Command::execute()
         return;
     }
 
+    // Builtin commands
     // If exit command is used, exit the program
     if (strcmp(_simpleCommands[0]->_arguments[0], "exit") == 0) {
         printf("Good bye!!\n");
@@ -299,6 +300,7 @@ void Command::execute()
         return;
     }
 
+    print();
 
     /*
         Notes:
